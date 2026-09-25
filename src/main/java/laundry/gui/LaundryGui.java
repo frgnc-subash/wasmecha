@@ -17,7 +17,6 @@ import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 import laundry.model.LaundryFacility;
 import laundry.model.MachinePool;
@@ -62,8 +61,6 @@ public class LaundryGui {
 
     /** Builds and shows the window. Must be called on the EDT. */
     public void display() {
-        useNimbusLookAndFeel();
-
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
         top.add(buildControls());
@@ -232,18 +229,5 @@ public class LaundryGui {
     private void appendLog(String line) {
         logArea.append(line + "\n");
         logArea.setCaretPosition(logArea.getDocument().getLength());
-    }
-
-    private static void useNimbusLookAndFeel() {
-        try {
-            for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
-                if ("Nimbus".equals(info.getName())) {
-                    UIManager.setLookAndFeel(info.getClassName());
-                    return;
-                }
-            }
-        } catch (Exception ignored) {
-            // keep the default look and feel
-        }
     }
 }
