@@ -1,0 +1,281 @@
+Concurrent Programming - CT074-3-2    Asia Pacific University of Technology & Innovation                   Level 2
+
+
+Objective:
+
+This assignment has been designed for students to apply appropriate concurrent program
+methods in implementing a concurrent program from a program specification.
+
+Learning Outcomes
+
+ON COMPLETION OF THIS ASSIGNMENT, YOU SHOULD BE ABLE TO DEMONSTRATE THE
+FOLLOWING LEARNING OUTCOME(S):
+No.                             Learning Outcome                                                        Assessment
+ 1     Explain the fundamental concepts of concurrency and parallelism in                                  Exam
+       the design of a concurrent system (C2, PLO1)
+ 2     Apply the concepts of concurrency and parallelism in the                                        Individual
+       construction of a system using a suitable programming language.                            Assignment (System)
+       (C3, PLO2)
+ 3     Explain the safety aspects of multi-threaded and parallel systems                               Individual
+       (A3, PLO6)                                                                                 Assignment (Report)
+
+Programme Outcomes (PO):
+
+PLO2 Cognitive Skills - This relates to thinking or intellectual capabilities and the ability to apply
+knowledge and skills. The capacity to develop levels of intellectual skills progressively begins from
+understanding, critical/creative thinking, assessment, and applying, analysing, problem solving as
+well as synthesizing to create new ideas, solutions, strategies, or new practices. Such intellectual
+skills enable the learner to search and comprehend new information from different fields of
+knowledge and practices.
+
+
+ Individual Assignment - Report (20%):
+                                                                             Question Vs Taxonomy
+     Question                                                                      Affective Level
+          No.                        Topic                                 1        2       3       4      5    PLO
+                                                                          SQ       SQ      SQ      SQ     SQ
+        1        Introduction and background                                               20%                       6
+                 Explanation of the safety aspects of multi-                                                         6
+        2                                                                                  30%
+                 threaded system implemented
+                 Justification of     coding techniques                                                              6
+        3                                                                                  30%
+                 implemented.
+                 Depth of discussion of concurrency                                                                  6
+        4                                                                                  20%
+                 concepts.
+                                     Total                                                 100%
+
+
+
+
+                                                 Page 1 of 5
+Concurrent Programming - CT074-3-2      Asia Pacific University of Technology & Innovation   Level 2
+
+
+Individual Assignment - System (25%):
+                                                                        Question Vs Taxonomy
+Question                                                                   Cognitive Level
+     No.                             Topic                            1  2     3      4    5 6         PLO
+                                                                     SQ SQ    SQ     SQ SQ SQ
+                 Appropriateness of coding techniques                                                   2
+                 used to implement design with
+        1                                                                             20%
+                 appropriate comment lines in source
+                 codes
+                 Appropriateness of the Java concurrent                                                 2
+        2                                                                             20%
+                 programming facilities used.
+                 Program runs appropriately with basic                                                  2
+        3                                                                             20%
+                 requirements
+        4        Additional requirements met                                          10%               2
+        5        Bonus requirements met                                               10%               2
+                 Explanations of concurrency concepts                                                   2
+        6        implemented with relevant code                                       20%
+                 samples
+                                  Total                                              100%
+
+
+Submission Requirements:
+Assignment Handout Date              : 13 March 2026
+
+Assignment Presentations             : Week of 25 May and 1 June 2026
+
+Assignment Due Date                  : 5 June 2026
+
+
+Case Study
+Smart Laundry Facility Simulation
+
+You have been tasked to simulate the operations of a smart self-service laundry facility.
+
+The facility has:
+
+    •       6 washing machines
+    •       4 dryers
+    •       2 payment kiosks
+    •       A total of 50 customers will arrive throughout the simulation to do their laundry.
+
+
+The simulation must coordinate:
+
+    •       Access to washers
+    •       Transfer to dryers
+    •       Payment processing
+    •       Statistics collection
+
+
+                                                   Page 2 of 5
+Concurrent Programming - CT074-3-2    Asia Pacific University of Technology & Innovation   Level 2
+
+
+
+ Appropriate assumptions which complement the requirements should be clearly stated and
+implemented accordingly.
+
+Basic Requirements:
+    1. Customer Arrival
+              o    Each customer is represented by a thread.
+              o    Customers arrive randomly every 0–3 seconds.
+    2. Washing Stage
+              o    Customers must wait if all washing machines are occupied.
+              o    Washing time: 4–6 seconds per customer.
+    3. Drying Stage
+              o    After washing, customers wait for an available dryer.
+              o    Drying time: 3–5 seconds per customer.
+    4. Payment
+              o    After drying, customers proceed to one of 2 payment kiosks.
+              o    Payment processing time: 1–2 seconds.
+Additional Requirements:
+
+    1. Mutual Exclusion
+
+              o    Access to washing machines, dryers, and payment kiosks must be synchronized.
+
+              o    Use synchronized blocks, ReentrantLock, or Semaphore for safe access.
+
+    2. Error Handling
+
+              o    5% chance a washing machine fails mid-cycle (customer must wait and retry).
+
+              o    5% chance a payment kiosk fails (retry after 2 seconds).
+
+    3. Statistics
+
+              o    Collect:
+
+                        ▪    Total customers served
+
+                        ▪    Average total time per customer
+
+                        ▪    Max concurrent washers and dryers in use
+
+    4. Concurrency
+
+              o    Multiple machines and dryers must operate simultaneously, visible in the output.
+
+    5. Simulation Duration
+
+              o    The simulation should run about 60 seconds in total.
+
+
+
+
+                                                 Page 3 of 5
+Concurrent Programming - CT074-3-2   Asia Pacific University of Technology & Innovation   Level 2
+
+Bonus Requirements:
+
+    1. Congested Scenario
+
+              o    Both payment machines fail to work for the day, causing congestion and chaos in
+                   the shop. Owner is called in after 30 customers at the payment queue.
+
+              o    Using GUI to visualise activities in the Laundromat
+
+
+Implementation:
+You should implement your simulation in Java. The simulation run should take about 1-2 minutes
+to simulate.
+
+Deliverables:
+
+        1. Java Files: Required to run the simulation.
+
+        2. Video: A video of the simulation running as you explain the output and code. Maximum
+           5 minutes per person.
+
+        3. Documentation: Detail the system implementation and testing, including:
+
+         •    List of requirements met.
+
+         •    Explanation of concurrency concepts (atomic statements, synchronization, etc.)
+              implemented.
+
+         •    Code snippet of the Java concurrent programming facilities implemented.
+
+         •    List of requirements not met.
+
+
+
+Sample Output
+
+To see what is happening dynamically, you must have output from the entry gates, exit gates, and
+payment processing reporting all their major events. Add information about which process/thread
+is doing the output. This way, you can see if a process/thread acts for another, which is strictly
+forbidden.
+
+
+Documentation for System (Report)
+The documentation should detail the system implementation and testing.
+
+    1. Basic requirements met:
+         •    List of requirements met.
+              - Short explanation of concurrency concepts (atomic statements, synchronization,
+                  etc) implemented.
+              - Code snippet of the Java concurrent programming facilities implemented.
+
+    2. Additional requirements met:
+         •    List of requirements met.
+              - Short explanation of concurrency concepts (atomic statements, synchronization,
+                  etc) implemented.
+              - Code snippet of the Java concurrent programming facilities implemented.
+
+                                                Page 4 of 5
+Concurrent Programming - CT074-3-2   Asia Pacific University of Technology & Innovation           Level 2
+
+
+
+    3. Bonus requirements met:
+              -    Screenshots
+    4. Requirements which were NOT met:
+         •    List of basic requirements.
+         •    List of additional requirements
+         •    List of bonus requirements
+
+Should not exceed 3000 words excluding references/appendix/coding.
+
+
+Submission for System
+    •  Java files required to run the simulation.
+    •  Video of the simulation running. Maximum 5 minutes per person.
+           o Simulate scenarios as stated above.
+           o Show which requirements are met in the output and corresponding code.
+Both code and presentation Zipped into a single zip file named TP0XXXXX CCP.zip
+
+
+Marking Scheme (NOT for student’s documentation guidance)
+
+
+Report (20%)
+Criteria                                                                            Total marks    Marks
+                                                                                                  awarded
+Assumptions [LO3-PO6]                                                                     20
+Explanation of the safety aspects of multi-threaded system                                30
+implemented [LO3-PO6]
+Justification of coding techniques implemented [LO3-PO6]                                  30
+Depth of discussion of concurrency concepts [LO3-PO6]                                     20
+TOTAL MARKS                                                                               100
+
+
+System (25%)
+Criteria                                                                            Total marks    Marks
+                                                                                                  awarded
+Appropriateness of coding techniques used to implement                                    20
+design with appropriate comment lines in source codes *
+Appropriateness of the Java concurrent programming facilities                             20
+used.
+Program runs appropriately with basic requirements *                                      20
+Additional requirements met *                                                             10
+Bonus requirements met*                                                                   10
+Explanations of concurrency concepts implemented with                                     20
+relevant code samples *
+TOTAL MARKS                                                                               100
+
+
+*Based on video presentation of the simulation.
+
+
+                                                Page 5 of 5
+

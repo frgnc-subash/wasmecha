@@ -2,88 +2,90 @@ package laundry.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-
-import org.springframework.stereotype.Service;
-
 import laundry.model.Customer;
 import laundry.model.LaundryFacility;
+import laundry.model.Owner;
+import laundry.model.Scenario;
+import org.springframework.stereotype.Service;
 
 /**
- * Orchestrates a single simulation run: spawns customer arrivals on a
- * background thread so callers (e.g. the GUI's Start button) never block.
+ * Runs a simulation on a background "ArrivalGate" thread, so the GUI never
+ * blocks. Each run gets a fresh LaundryFacility.
  */
 @Service
 public class SimulationService {
 
-    public static final int DEFAULT_NUM_CUSTOMERS = 50;
-    public static final int MIN_NUM_CUSTOMERS = 1;
-    public static final int MAX_NUM_CUSTOMERS = 300;
+    public static final int NUM_CUSTOMERS = 50;
 
-    private final LaundryFacility facility;
+    // Thread-safe list: listeners are added on the EDT, read by every thread.
+    private final List<Consumer<String>> logListeners = new CopyOnWriteArrayList<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
+    // volatile: replaced on each run, read by the GUI timer.
+    private volatile LaundryFacility facility = new LaundryFacility(Scenario.NORMAL, this::publish);
 
-    public SimulationService(LaundryFacility facility) {
-        this.facility = facility;
+    public void addLogListener(Consumer<String> listener) {
+        logListeners.add(listener);
     }
 
-    public boolean isRunning() {
-        return running.get();
+    public LaundryFacility getFacility() {
+        return facility;
     }
 
-    /**
-     * Starts a simulation run of {@code customerCount} customers in the
-     * background. {@code onFinished} is invoked (off the EDT) once every
-     * customer thread has completed.
-     */
-    public void start(int customerCount, Consumer<Long> onFinished) {
+    /** Starts a run unless one is already going. onFinished runs off the EDT. */
+    public void start(Scenario scenario, Runnable onFinished) {
         if (!running.compareAndSet(false, true)) {
             return;
         }
+        LaundryFacility shop = new LaundryFacility(scenario, this::publish);
+        facility = shop;
 
-        Thread orchestrator = new Thread(() -> runSimulation(customerCount, onFinished), "SimulationOrchestrator");
-        orchestrator.setDaemon(true);
-        orchestrator.start();
+        Thread gate = new Thread(() -> {
+            try {
+                runSimulation(shop);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                running.set(false);
+                onFinished.run();
+            }
+        }, "ArrivalGate");
+        gate.setDaemon(true);
+        gate.start();
     }
 
-    private void runSimulation(int customerCount, Consumer<Long> onFinished) {
-        facility.reset();
-        List<Thread> customerThreads = new ArrayList<>();
+    private void runSimulation(LaundryFacility shop) throws InterruptedException {
+        shop.log("simulation started: " + shop.getScenario() + ", " + NUM_CUSTOMERS + " customers");
+        List<Thread> threads = new ArrayList<>();
 
-        facility.log("Smart Laundry Facility Simulation starting...");
-        facility.log(LaundryFacility.NUM_WASHERS + " washers, "
-                + LaundryFacility.NUM_DRYERS + " dryers, "
-                + LaundryFacility.NUM_KIOSKS + " payment kiosks, "
-                + customerCount + " customers.");
-
-        long start = System.currentTimeMillis();
-
-        for (int i = 1; i <= customerCount; i++) {
-            try {
-                Thread.sleep(ThreadLocalRandom.current().nextInt(0, 3001)); // 0-3s
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-            Thread t = new Thread(new Customer(i, facility), "Customer-" + i + "-Thread");
-            customerThreads.add(t);
-            t.start();
+        if (shop.getScenario() == Scenario.CONGESTED) {
+            Thread owner = new Thread(new Owner(shop), "Owner");
+            threads.add(owner);
+            owner.start();
         }
 
-        for (Thread t : customerThreads) {
-            try {
-                t.join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+        // Customers arrive every 0-3 seconds, each on its own thread.
+        for (int id = 1; id <= NUM_CUSTOMERS; id++) {
+            Thread.sleep(ThreadLocalRandom.current().nextInt(0, 3001));
+            Thread customer = new Thread(new Customer(id, shop), "Customer-" + id);
+            threads.add(customer);
+            customer.start();
         }
 
-        long duration = System.currentTimeMillis() - start;
-        facility.log("Simulation finished in " + duration + " ms.");
+        // Wait for everyone to leave before printing the statistics.
+        for (Thread t : threads) {
+            t.join();
+        }
+        shop.finish();
+    }
 
-        running.set(false);
-        onFinished.accept(duration);
+    private void publish(String line) {
+        System.out.println(line);
+        for (Consumer<String> listener : logListeners) {
+            listener.accept(line);
+        }
     }
 }

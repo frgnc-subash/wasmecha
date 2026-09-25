@@ -1,163 +1,198 @@
 package laundry.model;
 
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
-import org.springframework.stereotype.Component;
-
 /**
- * Holds the shared, synchronized resources of the laundry facility
- * (washers, dryers, payment kiosks) and the running statistics.
+ * Shared state of ONE simulation run: the three machine pools, the
+ * congested-scenario coordination and the statistics.
  *
- * A single Spring-managed instance is shared by every Customer thread
- * and by the GUI, which subscribes as a log listener to display events.
+ * Every customer thread, the owner thread and the GUI share this object, so
+ * all mutable state is either thread-safe (Semaphore, CountDownLatch,
+ * atomics) or volatile.
  */
-@Component
 public class LaundryFacility {
 
     public static final int NUM_WASHERS = 6;
     public static final int NUM_DRYERS = 4;
     public static final int NUM_KIOSKS = 2;
 
-    // Counting semaphores model the fixed pool of each resource.
-    // 'true' = fair mode, so waiting customers are served in arrival order.
-    private final Semaphore washerSemaphore = new Semaphore(NUM_WASHERS, true);
-    private final Semaphore dryerSemaphore = new Semaphore(NUM_DRYERS, true);
-    private final Semaphore kioskSemaphore = new Semaphore(NUM_KIOSKS, true);
+    /** Congested scenario: the owner is called when this many are stuck at payment. */
+    public static final int OWNER_CALL_THRESHOLD = 30;
 
-    // Track how many of each resource are currently in use, and the peak,
-    // using atomics so updates from many customer threads stay consistent.
-    private final AtomicInteger washersInUse = new AtomicInteger(0);
-    private final AtomicInteger dryersInUse = new AtomicInteger(0);
-    private final AtomicInteger kiosksInUse = new AtomicInteger(0);
-    private final AtomicInteger maxWashersInUse = new AtomicInteger(0);
-    private final AtomicInteger maxDryersInUse = new AtomicInteger(0);
-    private final AtomicInteger maxKiosksInUse = new AtomicInteger(0);
+    private final Scenario scenario;
+    private final Consumer<String> logger;
+    private final long startMillis = System.currentTimeMillis();
+    private volatile long endMillis; // 0 while running
 
-    private final AtomicInteger customersServed = new AtomicInteger(0);
-    private final AtomicLong totalServiceTimeMillis = new AtomicLong(0);
+    private final MachinePool washers = new MachinePool(NUM_WASHERS);
+    private final MachinePool dryers = new MachinePool(NUM_DRYERS);
+    private final MachinePool kiosks = new MachinePool(NUM_KIOSKS);
 
-    // Listeners (e.g. the GUI's log panel) notified of every log message.
-    private final List<Consumer<String>> logListeners = new CopyOnWriteArrayList<>();
+    // ----- Congested scenario (bonus) -----
+    // volatile: written by the owner thread, read by customers and the GUI.
+    private volatile boolean kiosksDown;
+    private volatile String ownerStatus;
+    // Customers wait on this latch until the owner repairs the kiosks.
+    private final CountDownLatch kiosksRepaired;
+    // The owner thread waits on this latch until a customer calls.
+    private final CountDownLatch ownerCall = new CountDownLatch(1);
+    private final AtomicBoolean ownerCalled = new AtomicBoolean(false);
+    private final AtomicInteger stuckAtPayment = new AtomicInteger();
 
-    public void addLogListener(Consumer<String> listener) {
-        logListeners.add(listener);
+    // ----- Statistics: atomics so many threads can update without locks -----
+    private final AtomicInteger arrived = new AtomicInteger();
+    private final AtomicInteger served = new AtomicInteger();
+    private final AtomicLong totalTimeMillis = new AtomicLong();
+    private final AtomicInteger washerFailures = new AtomicInteger();
+    private final AtomicInteger kioskFailures = new AtomicInteger();
+
+    public LaundryFacility(Scenario scenario, Consumer<String> logger) {
+        this.scenario = scenario;
+        this.logger = logger;
+        boolean congested = scenario == Scenario.CONGESTED;
+        this.kiosksDown = congested;
+        this.kiosksRepaired = new CountDownLatch(congested ? 1 : 0);
+        this.ownerStatus = congested ? "On standby" : "Not needed";
     }
 
+    /**
+     * Logs a line tagged with the elapsed time and the name of the thread
+     * that is ACTUALLY running, proving no thread acts for another.
+     */
     public void log(String message) {
-        System.out.println(message);
-        for (Consumer<String> listener : logListeners) {
-            listener.accept(message);
+        logger.accept(String.format("[%5.1fs] %-12s | %s",
+            elapsedMillis() / 1000.0, Thread.currentThread().getName(), message));
+    }
+
+    // ----- Payment queue / owner coordination -----
+
+    /**
+     * Called by a customer before paying. While the kiosks are down the
+     * customer blocks here; the customer that makes the queue reach the
+     * threshold calls the owner. compareAndSet guarantees exactly one call.
+     */
+    public void awaitWorkingKiosks() throws InterruptedException {
+        if (!kiosksDown) {
+            return;
+        }
+        int stuck = stuckAtPayment.incrementAndGet();
+        log("kiosks are OUT OF ORDER, stuck in the payment queue (" + stuck + " waiting)");
+        if (stuck >= OWNER_CALL_THRESHOLD && ownerCalled.compareAndSet(false, true)) {
+            log(stuck + " customers stuck at payment -> CALLING THE OWNER!");
+            ownerCall.countDown();
+        }
+        try {
+            kiosksRepaired.await();
+        } finally {
+            stuckAtPayment.decrementAndGet();
         }
     }
 
-    public int getNumWashers() {
-        return NUM_WASHERS;
+    /** Owner thread blocks here until a customer calls. */
+    public void awaitOwnerCall() throws InterruptedException {
+        ownerCall.await();
     }
 
-    public int getNumDryers() {
-        return NUM_DRYERS;
+    /** Owner fixes the kiosks and releases every waiting customer at once. */
+    public void repairKiosks() {
+        kiosksDown = false;
+        kiosksRepaired.countDown();
     }
 
-    public int getNumKiosks() {
-        return NUM_KIOSKS;
+    // ----- Statistics -----
+
+    public void customerArrived() {
+        arrived.incrementAndGet();
     }
 
-    public int getWashersInUse() {
-        return washersInUse.get();
+    public void recordCompletion(long timeMillis) {
+        served.incrementAndGet();
+        totalTimeMillis.addAndGet(timeMillis);
     }
 
-    public int getDryersInUse() {
-        return dryersInUse.get();
+    public void recordWasherFailure() {
+        washerFailures.incrementAndGet();
     }
 
-    public int getKiosksInUse() {
-        return kiosksInUse.get();
+    public void recordKioskFailure() {
+        kioskFailures.incrementAndGet();
     }
 
-    public int getMaxWashersInUse() {
-        return maxWashersInUse.get();
+    /** Marks the run as over and prints the final statistics. */
+    public void finish() {
+        endMillis = System.currentTimeMillis();
+        log("================ STATISTICS ================");
+        log("Scenario                   : " + scenario);
+        log("Total customers served     : " + served.get());
+        log(String.format("Average time per customer  : %.1f s", getAverageTimeSeconds()));
+        log("Max washers in use at once : " + washers.getMaxInUse() + " / " + NUM_WASHERS);
+        log("Max dryers in use at once  : " + dryers.getMaxInUse() + " / " + NUM_DRYERS);
+        log("Washer failures            : " + washerFailures.get());
+        log("Kiosk failures             : " + kioskFailures.get());
+        log(String.format("Total simulation time      : %.1f s", elapsedMillis() / 1000.0));
     }
 
-    public int getMaxDryersInUse() {
-        return maxDryersInUse.get();
+    // ----- Getters -----
+
+    public MachinePool washers() {
+        return washers;
     }
 
-    public int getMaxKiosksInUse() {
-        return maxKiosksInUse.get();
+    public MachinePool dryers() {
+        return dryers;
     }
 
-    public int getCustomersServed() {
-        return customersServed.get();
+    public MachinePool kiosks() {
+        return kiosks;
     }
 
-    public double getAverageServiceTimeMillis() {
-        int served = customersServed.get();
-        return served == 0 ? 0.0 : (double) totalServiceTimeMillis.get() / served;
+    public Scenario getScenario() {
+        return scenario;
     }
 
-    /** Clears all counters/stats so the facility can be reused for a fresh run. */
-    public void reset() {
-        washersInUse.set(0);
-        dryersInUse.set(0);
-        kiosksInUse.set(0);
-        maxWashersInUse.set(0);
-        maxDryersInUse.set(0);
-        maxKiosksInUse.set(0);
-        customersServed.set(0);
-        totalServiceTimeMillis.set(0);
+    public boolean areKiosksDown() {
+        return kiosksDown;
     }
 
-    public void acquireWasher() throws InterruptedException {
-        washerSemaphore.acquire();
-        int current = washersInUse.incrementAndGet();
-        maxWashersInUse.accumulateAndGet(current, Math::max);
+    public String getOwnerStatus() {
+        return ownerStatus;
     }
 
-    public void releaseWasher() {
-        washersInUse.decrementAndGet();
-        washerSemaphore.release();
+    public void setOwnerStatus(String status) {
+        this.ownerStatus = status;
     }
 
-    public void acquireDryer() throws InterruptedException {
-        dryerSemaphore.acquire();
-        int current = dryersInUse.incrementAndGet();
-        maxDryersInUse.accumulateAndGet(current, Math::max);
+    public int getPaymentQueue() {
+        return stuckAtPayment.get() + kiosks.getWaiting();
     }
 
-    public void releaseDryer() {
-        dryersInUse.decrementAndGet();
-        dryerSemaphore.release();
+    public int getArrived() {
+        return arrived.get();
     }
 
-    public void acquireKiosk() throws InterruptedException {
-        kioskSemaphore.acquire();
-        int current = kiosksInUse.incrementAndGet();
-        maxKiosksInUse.accumulateAndGet(current, Math::max);
+    public int getServed() {
+        return served.get();
     }
 
-    public void releaseKiosk() {
-        kiosksInUse.decrementAndGet();
-        kioskSemaphore.release();
+    public double getAverageTimeSeconds() {
+        int n = served.get();
+        return n == 0 ? 0 : totalTimeMillis.get() / 1000.0 / n;
     }
 
-    public void recordCompletion(long totalTimeMillis) {
-        customersServed.incrementAndGet();
-        totalServiceTimeMillis.addAndGet(totalTimeMillis);
+    public int getWasherFailures() {
+        return washerFailures.get();
     }
 
-    public void printStatistics() {
-        System.out.println();
-        System.out.println("========== Simulation Statistics ==========");
-        System.out.println("Total customers served       : " + getCustomersServed());
-        System.out.printf( "Average total time / customer: %.0f ms%n", getAverageServiceTimeMillis());
-        System.out.println("Max concurrent washers in use : " + getMaxWashersInUse() + " / " + NUM_WASHERS);
-        System.out.println("Max concurrent dryers in use  : " + getMaxDryersInUse() + " / " + NUM_DRYERS);
-        System.out.println("Max concurrent kiosks in use  : " + getMaxKiosksInUse() + " / " + NUM_KIOSKS);
-        System.out.println("=============================================");
+    public int getKioskFailures() {
+        return kioskFailures.get();
+    }
+
+    public long elapsedMillis() {
+        long end = endMillis == 0 ? System.currentTimeMillis() : endMillis;
+        return end - startMillis;
     }
 }

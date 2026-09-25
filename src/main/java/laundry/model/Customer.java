@@ -3,109 +3,112 @@ package laundry.model;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Each customer is an independent thread that moves through three
- * synchronized stages of the facility: washing, drying, then payment.
+ * One customer = one thread. Goes through wash -> dry -> pay, and only ever
+ * logs about ITSELF (the thread name is printed on every line).
  */
 public class Customer implements Runnable {
 
-    private final int id;
-    private final LaundryFacility facility;
+    private static final int FAILURE_PERCENT = 5;
 
-    public Customer(int id, LaundryFacility facility) {
+    private final int id;
+    private final LaundryFacility shop;
+
+    public Customer(int id, LaundryFacility shop) {
         this.id = id;
-        this.facility = facility;
+        this.shop = shop;
     }
 
     @Override
     public void run() {
         long start = System.currentTimeMillis();
-        log("arrived at the facility");
-
+        shop.customerArrived();
+        shop.log("ENTERED the laundromat");
         try {
             wash();
             dry();
             pay();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log("was interrupted before finishing laundry");
+            shop.log("interrupted, leaving early");
             return;
         }
-
-        long totalTime = System.currentTimeMillis() - start;
-        facility.recordCompletion(totalTime);
-        log("all done, total time = " + totalTime + " ms");
+        long total = System.currentTimeMillis() - start;
+        shop.recordCompletion(total);
+        shop.log(String.format("EXITED the laundromat (total %.1f s)", total / 1000.0));
     }
 
+    /** 4-6 s wash. 5% chance the machine fails: unload, re-queue, retry. */
     private void wash() throws InterruptedException {
-        boolean success = false;
-        while (!success) {
-            log("waiting for a washing machine");
-            facility.acquireWasher();
-            log("washing machine acquired, washing started");
+        MachinePool washers = shop.washers();
+        while (true) {
+            shop.log("waiting for a washing machine");
+            int slot = washers.acquire(id);
+            String machine = "Washer " + (slot + 1);
             try {
-                int washTime = randomMillis(4000, 6000);
-                Thread.sleep(washTime);
-
-                // 5% chance the machine fails mid-cycle.
-                if (ThreadLocalRandom.current().nextInt(100) < 5) {
-                    log("washing machine FAILED mid-cycle, will retry");
-                } else {
-                    log("washing finished");
-                    success = true;
+                shop.log("started washing on " + machine);
+                sleepBetween(4000, 6000);
+                if (!fails()) {
+                    shop.log("finished washing on " + machine);
+                    return;
                 }
+                washers.markBroken(slot);
+                shop.recordWasherFailure();
+                shop.log(machine + " FAILED mid-cycle, unloading to retry");
+                Thread.sleep(1000); // unload wet clothes
             } finally {
-                facility.releaseWasher();
-            }
-            if (!success) {
-                Thread.sleep(500); // brief pause before retrying
+                washers.release(slot); // always give the machine back
             }
         }
     }
 
+    /** 3-5 s drying. */
     private void dry() throws InterruptedException {
-        log("waiting for a dryer");
-        facility.acquireDryer();
-        log("dryer acquired, drying started");
+        MachinePool dryers = shop.dryers();
+        shop.log("waiting for a dryer");
+        int slot = dryers.acquire(id);
         try {
-            int dryTime = randomMillis(3000, 5000);
-            Thread.sleep(dryTime);
-            log("drying finished");
+            shop.log("started drying on Dryer " + (slot + 1));
+            sleepBetween(3000, 5000);
+            shop.log("finished drying on Dryer " + (slot + 1));
         } finally {
-            facility.releaseDryer();
+            dryers.release(slot);
         }
     }
 
+    /** 1-2 s payment. 5% chance the kiosk fails: retry after 2 s. */
     private void pay() throws InterruptedException {
-        boolean success = false;
-        while (!success) {
-            log("waiting for a payment kiosk");
-            facility.acquireKiosk();
-            log("payment kiosk acquired, processing payment");
+        shop.awaitWorkingKiosks(); // blocks only in the congested scenario
+        MachinePool kiosks = shop.kiosks();
+        while (true) {
+            shop.log("waiting for a payment kiosk");
+            int slot = kiosks.acquire(id);
+            String kiosk = "Kiosk " + (slot + 1);
+            boolean paid;
             try {
-                int payTime = randomMillis(1000, 2000);
-                Thread.sleep(payTime);
-
-                // 5% chance the kiosk fails during payment.
-                if (ThreadLocalRandom.current().nextInt(100) < 5) {
-                    log("payment kiosk FAILED, will retry in 2s");
-                } else {
-                    log("payment completed");
-                    success = true;
+                shop.log("paying at " + kiosk);
+                sleepBetween(1000, 2000);
+                paid = !fails();
+                if (!paid) {
+                    kiosks.markBroken(slot);
+                    shop.recordKioskFailure();
+                    shop.log(kiosk + " FAILED during payment, retrying in 2 s");
                 }
             } finally {
-                facility.releaseKiosk();
+                kiosks.release(slot);
             }
-            if (!success) {
-                Thread.sleep(2000);
+            if (paid) {
+                shop.log("payment successful at " + kiosk);
+                return;
             }
+            Thread.sleep(2000);
         }
     }
 
-    private int randomMillis(int minInclusive, int maxInclusive) {
-        return ThreadLocalRandom.current().nextInt(minInclusive, maxInclusive + 1);
+    private static boolean fails() {
+        return ThreadLocalRandom.current().nextInt(100) < FAILURE_PERCENT;
     }
 
-    private void log(String message) {
-        facility.log(String.format("[%s] Customer %d: %s", Thread.currentThread().getName(), id, message));
+    private static void sleepBetween(int minMillis, int maxMillis) throws InterruptedException {
+        Thread.sleep(ThreadLocalRandom.current().nextInt(minMillis, maxMillis + 1));
     }
 }
