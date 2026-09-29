@@ -54,7 +54,7 @@ public class Customer implements Runnable {
                 washers.markBroken(slot);
                 shop.recordWasherFailure();
                 shop.log(machine + " FAILED mid-cycle, unloading to retry");
-                Thread.sleep(1000); // unload wet clothes
+                shop.pause(1000); // unload wet clothes
             } finally {
                 washers.release(slot); // always give the machine back
             }
@@ -100,7 +100,7 @@ public class Customer implements Runnable {
                 shop.log("payment successful at " + kiosk);
                 return;
             }
-            Thread.sleep(2000);
+            shop.pause(2000);
         }
     }
 
@@ -108,7 +108,7 @@ public class Customer implements Runnable {
         return ThreadLocalRandom.current().nextInt(100) < FAILURE_PERCENT;
     }
 
-    private static void sleepBetween(int minMillis, int maxMillis) throws InterruptedException {
-        Thread.sleep(ThreadLocalRandom.current().nextInt(minMillis, maxMillis + 1));
+    private void sleepBetween(int minMillis, int maxMillis) throws InterruptedException {
+        shop.pause(ThreadLocalRandom.current().nextInt(minMillis, maxMillis + 1));
     }
 }

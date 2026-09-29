@@ -26,7 +26,6 @@ public class LaundryFacility {
     private final Scenario scenario;
     private final Consumer<String> logger;
     private final long startMillis = System.currentTimeMillis();
-    private volatile long endMillis; // 0 while running
 
     private final MachinePool washers = new MachinePool(NUM_WASHERS);
     private final MachinePool dryers = new MachinePool(NUM_DRYERS);
@@ -36,6 +35,9 @@ public class LaundryFacility {
     // volatile: written by the owner thread, read by customers and the GUI.
     private volatile boolean kiosksDown;
     private volatile String ownerStatus;
+    private volatile long endMillis; // 0 while running
+
+    
     // Customers wait on this latch until the owner repairs the kiosks.
     private final CountDownLatch kiosksRepaired;
     // The owner thread waits on this latch until a customer calls.
@@ -66,6 +68,14 @@ public class LaundryFacility {
     public void log(String message) {
         logger.accept(String.format("[%5.1fs] %-12s | %s",
             elapsedMillis() / 1000.0, Thread.currentThread().getName(), message));
+    }
+
+    /**
+     * Sleeps for a simulated duration (wash 4-6 s, ...), scaled to real time
+     * by the scenario's time scale.
+     */
+    public void pause(long simulatedMillis) throws InterruptedException {
+        Thread.sleep(Math.round(simulatedMillis * scenario.timeScale()));
     }
 
     // ----- Payment queue / owner coordination -----

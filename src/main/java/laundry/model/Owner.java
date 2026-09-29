@@ -22,11 +22,11 @@ public class Owner implements Runnable {
 
             shop.setOwnerStatus("Called in, travelling");
             shop.log("got the call, travelling to the laundromat");
-            Thread.sleep(3000);
+            shop.pause(3000);
 
             shop.setOwnerStatus("Repairing kiosks");
             shop.log("arrived, repairing both kiosks");
-            Thread.sleep(2000);
+            shop.pause(2000);
 
             shop.repairKiosks();
             shop.setOwnerStatus("Kiosks repaired");

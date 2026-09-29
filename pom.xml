@@ -24,7 +24,6 @@
     </properties>
 
     <dependencies>
-        <!-- Spring's IoC container (DI, bean lifecycle) without the web stack -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>

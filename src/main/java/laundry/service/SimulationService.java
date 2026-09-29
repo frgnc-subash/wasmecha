@@ -1,9 +1,9 @@
 package laundry.service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import laundry.model.Customer;
@@ -67,9 +67,17 @@ public class SimulationService {
             owner.start();
         }
 
-        // Customers arrive every 0-3 seconds, each on its own thread.
+        // Customers arrive every 0-3 seconds, each on its own thread. The gaps
+        // are spread evenly over 0-3 s and shuffled: each one is still random,
+        // but they always add up to the same total, so run times stay steady.
+        List<Integer> gaps = new ArrayList<>();
+        for (int i = 0; i < NUM_CUSTOMERS; i++) {
+            gaps.add(Math.round(3000f * i / (NUM_CUSTOMERS - 1)));
+        }
+        Collections.shuffle(gaps);
+
         for (int id = 1; id <= NUM_CUSTOMERS; id++) {
-            Thread.sleep(ThreadLocalRandom.current().nextInt(0, 3001));
+            shop.pause(gaps.get(id - 1));
             Thread customer = new Thread(new Customer(id, shop), "Customer-" + id);
             threads.add(customer);
             customer.start();
